@@ -1,0 +1,40 @@
+// Sello — minimal offline-friendly service worker.
+// Caches the app shell so it opens even on a weak connection; provider
+// data itself always comes fresh from Firestore since it needs to be live.
+const CACHE_NAME = 'sello-shell-v1';
+const SHELL_FILES = [
+  './index.html',
+  './landing.html',
+  './sello-styles.css',
+  './manifest.json',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).catch(()=>{})
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  // Only handle same-origin GET requests for shell files; everything else
+  // (Firestore, Google Fonts, WhatsApp links) goes straight to the network.
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  event.respondWith(
+    caches.match(event.request).then((cached) =>
+      cached || fetch(event.request).catch(() => cached)
+    )
+  );
+});
