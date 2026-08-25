@@ -154,7 +154,7 @@ textarea.field{resize:vertical; min-height:70px;}
 
 /* ---------- Admin ---------- */
 .admin-shell{background:var(--emerald-deep); min-height:100vh; color:#fff;}
-.admin-login{display:flex; flex-direction:column; justify-content:center; min-height:100vh; padding:32px; max-width:480px; margin:0 auto;}
+.admin-login{display:flex; flex-direction:column; justify-content:center; min-height:100vh; padding:32px; max-width:480px; margin:0 auto; background-color:var(--emerald-deep); background-image:linear-gradient(180deg, rgba(6,34,25,0.65), rgba(6,34,25,0.92)), url('https://iili.io/CD6icoQ.png'); background-size:cover; background-position:center;}
 .admin-login .stamp{width:56px; height:56px; font-size:22px; border-color:var(--emerald-tint); color:var(--emerald-tint); margin-bottom:20px;}
 .admin-login h2{color:#fff; font-size:28px;}
 .admin-login p.sub{color:rgba(255,255,255,0.6); font-family:'Space Mono',monospace; font-size:12px; margin-top:8px;}
