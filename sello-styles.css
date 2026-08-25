@@ -186,7 +186,7 @@ label{font-family:'Space Mono',monospace; font-size:11px; font-weight:700; color
   background-color:var(--emerald-deep);
   background-image:
     linear-gradient(180deg, rgba(6,34,25,0.65), rgba(6,34,25,0.92)),
-    url('images/landing-bg.jpg');
+    url('https://iili.io/CD6icoQ.png');
   background-size:cover; background-position:center;
 }
 .landing-content{position:relative; z-index:1; max-width:420px;}
@@ -203,7 +203,7 @@ label{font-family:'Space Mono',monospace; font-size:11px; font-weight:700; color
   background-color:var(--emerald-deep);
   background-image:
     linear-gradient(180deg, rgba(6,34,25,0.55), rgba(6,34,25,0.88)),
-    url('images/hero-bg.jpg');
+    url('https://iili.io/CD6eob9.png');
   background-size:cover; background-position:center;
 }
 .site-hero-inner{position:relative; z-index:1;}
