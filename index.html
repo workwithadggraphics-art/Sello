@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sello — Find trusted hands nearby</title>
+<meta name="theme-color" content="#0E7C5B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="sello-styles.css">
+</head>
+<body>
+<div id="app"><div class="loading">Opening Sello…</div></div>
+
+<script type="module">
+import { db } from "./firebase-init.js";
+import { collection, getDocs, addDoc, query, where, orderBy, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+const CATEGORIES = ["All","Tailoring & Fashion","Hair & Beauty","Photography & Video","Catering & Events","Home & Repairs","Tech & Gadgets","Auto & Mechanic","Health & Wellness","Cleaning Services"];
+
+let state = {
+  view: "home",
+  providerId: null,
+  search: "",
+  category: "All",
+  providers: [],
+  reviews: {},   // providerId -> [review, ...]
+  loading: true,
+  toast: null,
+};
+
+function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+function initials(name){ return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join(''); }
+function starString(n){ const full=Math.round(n); return "★".repeat(full)+"☆".repeat(5-full); }
+
+// ---------- data ----------
+async function loadProviders(){
+  const snap = await getDocs(query(collection(db,'providers'), orderBy('createdAt','desc')));
+  state.providers = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+}
+async function loadReviewsFor(providerId){
+  if(state.reviews[providerId]) return state.reviews[providerId];
+  const snap = await getDocs(query(collection(db,'reviews'), where('providerId','==',providerId)));
+  const rv = snap.docs.map(d=>({ id:d.id, ...d.data() })).sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+  state.reviews[providerId] = rv;
+  return rv;
+}
+function avgRating(pid){
+  const rv = state.reviews[pid];
+  if(!rv || !rv.length) return 0;
+  return rv.reduce((s,r)=>s+r.stars,0)/rv.length;
+}
+
+// ---------- render ----------
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  if(state.loading){ app.appendChild(el(`<div class="loading">Opening Sello…</div>`)); return; }
+  if(state.view === 'home') app.appendChild(renderHome());
+  else if(state.view === 'detail') app.appendChild(renderDetail());
+  if(state.toast){
+    const t = el(`<div class="toast">${esc(state.toast)}</div>`);
+    app.appendChild(t);
+    setTimeout(()=>{ state.toast=null; t.remove(); }, 2200);
+  }
+}
+
+function filteredProviders(){
+  return state.providers.filter(p=>{
+    const matchCat = state.category === 'All' || p.niche === state.category;
+    const q = state.search.trim().toLowerCase();
+    const matchSearch = !q || p.name.toLowerCase().includes(q) || p.niche.toLowerCase().includes(q) || (p.desc||'').toLowerCase().includes(q);
+    return matchCat && matchSearch;
+  });
+}
+
+function renderHome(){
+  const wrap = el(`<div style="display:flex;flex-direction:column;min-height:100vh;">
+    <div class="topbar">
+      <div class="brandrow">
+        <div class="brand"><div class="stamp">S</div><h1>Sello</h1></div>
+      </div>
+      <div class="search-wrap">
+        <input class="search-input" id="searchInput" placeholder="Search a service — tailor, photographer, caterer…" value="${esc(state.search)}">
+      </div>
+      <div class="chiprow" id="chipRow"></div>
+    </div>
+    <div class="content">
+      <div class="section-label" id="resultsLabel"></div>
+      <div id="providerList"></div>
+    </div>
+  </div>`);
+
+  const chipRow = wrap.querySelector('#chipRow');
+  CATEGORIES.forEach(c=>{
+    const chip = el(`<button class="chip ${c===state.category?'active':''}">${esc(c)}</button>`);
+    chip.onclick = ()=>{ state.category = c; render(); };
+    chipRow.appendChild(chip);
+  });
+
+  wrap.querySelector('#searchInput').oninput = (e)=>{ state.search = e.target.value; renderList(wrap); };
+  renderList(wrap);
+  return wrap;
+}
+
+function renderList(wrap){
+  const list = filteredProviders();
+  wrap.querySelector('#resultsLabel').textContent = state.category==='All' ? `${list.length} providers on Sello` : `${list.length} in ${state.category}`;
+  const listEl = wrap.querySelector('#providerList');
+  listEl.innerHTML = '';
+  if(!list.length){
+    listEl.appendChild(el(`<div class="empty"><div class="stamp">?</div><p>No providers match yet.<br>Try another search or category.</p></div>`));
+    return;
+  }
+  list.forEach((p,i)=>{
+    const entryNo = String(i+1).padStart(3,'0');
+    const card = el(`<div class="ledger-row">
+      <div class="entry-no">N°${entryNo}</div>
+      <div class="entry-body">
+        <div class="entry-top"><div class="entry-name">${esc(p.name)}</div><div class="entry-stamp">✓</div></div>
+        <div class="entry-niche">${esc(p.niche)}</div>
+        <div class="entry-desc">${esc(p.desc)}</div>
+        <div class="entry-meta">
+          <div class="rating" data-pid="${p.id}">…</div>
+          <div class="locpin">${esc((p.contact||'').split(',')[0])}</div>
+        </div>
+      </div>
+    </div>`);
+    card.onclick = ()=>{ state.view='detail'; state.providerId=p.id; render(); };
+    listEl.appendChild(card);
+    // fill in rating async without blocking the list paint
+    loadReviewsFor(p.id).then(rv=>{
+      const r = avgRating(p.id);
+      const target = card.querySelector('.rating');
+      if(target) target.innerHTML = (r? '★'+r.toFixed(1) : 'NEW') + (rv.length? ` <span class="count">(${rv.length})</span>` : '');
+    });
+  });
+}
+
+function renderDetail(){
+  const p = state.providers.find(x=>x.id===state.providerId);
+  if(!p){ state.view='home'; return renderHome(); }
+  const waMsg = encodeURIComponent("Hi, got your contact from Sello");
+  const waLink = `https://wa.me/${p.whatsapp}?text=${waMsg}`;
+
+  const wrap = el(`<div>
+    <div class="detail-hero">
+      <a href="#" id="backBtn" class="back-btn">‹ Back to Sello</a>
+      <div class="stamp-corner">SELLO<br>VERIFIED</div>
+      <div class="entry-no-big">FILE N°${String(state.providers.findIndex(x=>x.id===p.id)+1).padStart(3,'0')}</div>
+      <h2>${esc(p.name)}</h2>
+      <div class="niche">${esc(p.niche)}</div>
+    </div>
+    <div class="content" style="padding-top:8px;">
+      <a href="${waLink}" target="_blank" rel="noopener" class="whatsapp-btn">💬 Message on WhatsApp</a>
+
+      <div class="detail-block">
+        <div class="section-label" style="margin-top:0;">About</div>
+        <p>${esc(p.desc)}</p>
+      </div>
+
+      <div class="detail-block">
+        <div class="section-label" style="margin-top:0;">Reach them</div>
+        <div class="contact-row">📍 ${esc(p.contact)}</div>
+      </div>
+
+      <div class="detail-block">
+        <div class="section-label" style="margin-top:0;">Reviews</div>
+        <div id="ratingSummary" class="rating-summary"><div class="loading" style="padding:10px 0;">Loading reviews…</div></div>
+        <div id="reviewList"></div>
+        <div class="review-form">
+          <div class="section-label" style="margin-top:0;">Leave a review</div>
+          <div class="star-picker" id="starPicker">${[1,2,3,4,5].map(n=>`<span data-n="${n}">★</span>`).join('')}</div>
+          <input class="field" id="reviewName" placeholder="Your name">
+          <textarea class="field" id="reviewText" placeholder="How was the service?"></textarea>
+          <button class="btn-primary" id="submitReview">Post review</button>
+          <div id="reviewMsg"></div>
+        </div>
+      </div>
+    </div>
+  </div>`);
+
+  wrap.querySelector('#backBtn').onclick = (e)=>{ e.preventDefault(); state.view='home'; render(); };
+
+  loadReviewsFor(p.id).then(reviews=>{
+    const rating = avgRating(p.id);
+    wrap.querySelector('#ratingSummary').innerHTML = `
+      <div class="rating-big">${rating? rating.toFixed(1) : '—'}</div>
+      <div>
+        <div class="stars">${starString(rating)}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${reviews.length} review${reviews.length===1?'':'s'}</div>
+      </div>`;
+    const revList = wrap.querySelector('#reviewList');
+    revList.innerHTML = '';
+    if(!reviews.length){
+      revList.appendChild(el(`<div style="font-size:13px;color:var(--ink-soft);padding:10px 0;">No reviews yet — be the first to share how it went.</div>`));
+    } else {
+      reviews.forEach(r=>{
+        revList.appendChild(el(`<div class="review-item">
+          <div class="review-head"><div class="review-name">${esc(r.name)}</div><div class="stars" style="font-size:12px;">${starString(r.stars)}</div></div>
+          <div class="review-text">${esc(r.text)}</div>
+        </div>`));
+      });
+    }
+  });
+
+  let stars = 0;
+  const picker = wrap.querySelector('#starPicker');
+  picker.querySelectorAll('span').forEach(s=>{
+    s.onclick = ()=>{
+      stars = parseInt(s.dataset.n);
+      picker.querySelectorAll('span').forEach(x=>x.classList.toggle('on', parseInt(x.dataset.n) <= stars));
+    };
+  });
+
+  wrap.querySelector('#submitReview').onclick = async (e)=>{
+    const btn = e.currentTarget;
+    const name = wrap.querySelector('#reviewName').value.trim();
+    const text = wrap.querySelector('#reviewText').value.trim();
+    const msgEl = wrap.querySelector('#reviewMsg');
+    if(!stars){ msgEl.innerHTML = '<div class="err">Pick a star rating first.</div>'; return; }
+    if(!name || !text){ msgEl.innerHTML = '<div class="err">Add your name and a short review.</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Posting…';
+    try{
+      await addDoc(collection(db,'reviews'), { providerId: p.id, name, text, stars, createdAt: serverTimestamp() });
+      delete state.reviews[p.id]; // force refetch so the new review shows
+      state.toast = "Review posted — thank you!";
+      render();
+    }catch(err){
+      msgEl.innerHTML = '<div class="err">Couldn\'t post that — check your connection and try again.</div>';
+      btn.disabled = false; btn.textContent = 'Post review';
+    }
+  };
+
+  return wrap;
+}
+
+// ---------- init ----------
+(async function init(){
+  render();
+  try{
+    await loadProviders();
+  }catch(e){
+    console.error(e);
+  }
+  state.loading = false;
+  render();
+})();
+</script>
+</body>
+</html>
