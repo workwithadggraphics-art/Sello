@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sello Admin</title>
+<meta name="theme-color" content="#062E24">
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="sello-styles.css">
+</head>
+<body>
+<div id="app"><div class="loading">Opening Sello Admin…</div></div>
+
+<script type="module">
+import { db, auth } from "./firebase-init.js";
+import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut }
+  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+const CATEGORIES = ["Tailoring & Fashion","Hair & Beauty","Photography & Video","Catering & Events","Home & Repairs","Tech & Gadgets","Auto & Mechanic","Health & Wellness","Cleaning Services"];
+
+let state = {
+  user: null,
+  authChecked: false,
+  adminView: "list",
+  providers: [],
+  toast: null,
+};
+
+function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+async function loadProviders(){
+  const snap = await getDocs(query(collection(db,'providers'), orderBy('createdAt','desc')));
+  state.providers = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  if(!state.authChecked){ app.appendChild(el(`<div class="loading">Opening Sello Admin…</div>`)); return; }
+  app.appendChild(state.user ? renderDashboard() : renderLogin());
+  if(state.toast){
+    const t = el(`<div class="toast">${esc(state.toast)}</div>`);
+    app.appendChild(t);
+    setTimeout(()=>{ state.toast=null; t.remove(); }, 2200);
+  }
+}
+
+function renderLogin(){
+  const wrap = el(`<div class="admin-shell">
+    <div class="admin-login">
+      <div class="stamp">S</div>
+      <h2>Sello Admin</h2>
+      <p class="sub">Sign in to add and manage service providers.</p>
+      <input class="field" id="loginEmail" placeholder="Email address" autocomplete="username">
+      <input class="field" id="loginPass" type="password" placeholder="Password" autocomplete="current-password">
+      <button class="btn-primary" id="loginBtn">Sign in</button>
+      <div id="loginErr"></div>
+      <div class="admin-hint">Admin users are created in the Firebase console under Authentication → Users — there's no public sign-up here.<br><br>
+      <a href="index.html" style="color:rgba(255,255,255,0.7);text-decoration:underline;">← Back to the main site</a></div>
+    </div>
+  </div>`);
+
+  const doLogin = async ()=>{
+    const email = wrap.querySelector('#loginEmail').value.trim();
+    const pass = wrap.querySelector('#loginPass').value;
+    const errEl = wrap.querySelector('#loginErr');
+    const btn = wrap.querySelector('#loginBtn');
+    if(!email || !pass){ errEl.innerHTML = '<div class="err">Enter your email and password.</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try{
+      await signInWithEmailAndPassword(auth, email, pass);
+      // onAuthStateChanged picks up the rest
+    }catch(err){
+      errEl.innerHTML = '<div class="err">That email or password isn\'t right.</div>';
+      btn.disabled = false; btn.textContent = 'Sign in';
+    }
+  };
+  wrap.querySelector('#loginBtn').onclick = doLogin;
+  wrap.querySelector('#loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  return wrap;
+}
+
+function renderDashboard(){
+  const wrap = el(`<div class="admin-shell">
+    <div class="admin-top">
+      <div class="brand"><div class="stamp" style="border-color:var(--emerald-tint);color:var(--emerald-tint);">S</div><h1 style="color:#fff;font-size:18px;">Sello Admin</h1></div>
+      <button class="logout" id="logoutBtn">Log out</button>
+    </div>
+    <div class="admin-body">
+      <div class="tab-row">
+        <button class="tab ${state.adminView==='list'?'active':''}" id="tabList">Providers (${state.providers.length})</button>
+        <button class="tab ${state.adminView==='add'?'active':''}" id="tabAdd">+ Add new</button>
+      </div>
+      <div id="adminContent"></div>
+      <div style="margin-top:24px;"><a href="index.html" style="font-size:12px;color:var(--ink-soft);text-decoration:underline;">View the main site →</a></div>
+    </div>
+  </div>`);
+
+  wrap.querySelector('#logoutBtn').onclick = async ()=>{ await signOut(auth); };
+  wrap.querySelector('#tabList').onclick = ()=>{ state.adminView='list'; render(); };
+  wrap.querySelector('#tabAdd').onclick = ()=>{ state.adminView='add'; render(); };
+
+  const content = wrap.querySelector('#adminContent');
+  if(state.adminView === 'list'){
+    if(!state.providers.length){
+      content.appendChild(el(`<div class="empty"><div class="stamp">?</div><p>No providers yet.<br>Add your first one.</p></div>`));
+    } else {
+      state.providers.forEach((p,i)=>{
+        const row = el(`<div class="provider-row">
+          <div><div class="mono" style="font-size:11px;color:var(--ink-soft);">N°${String(i+1).padStart(3,'0')}</div><div class="p-name">${esc(p.name)}</div><div class="p-niche">${esc(p.niche)}</div></div>
+          <button class="btn-danger">Remove</button>
+        </div>`);
+        row.querySelector('button').onclick = async ()=>{
+          if(!confirm(`Remove ${p.name} from Sello?`)) return;
+          await deleteDoc(doc(db,'providers',p.id));
+          await loadProviders();
+          state.toast = "Removed from Sello";
+          render();
+        };
+        content.appendChild(row);
+      });
+    }
+  } else {
+    const form = el(`<div>
+      <label>Business / brand name</label>
+      <input class="field" id="fName" placeholder="e.g. Adaeze Threads">
+      <label>Category</label>
+      <select class="field" id="fNiche">${CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
+      <label>What they offer</label>
+      <textarea class="field" id="fDesc" placeholder="A short, honest description of the brand and what customers get"></textarea>
+      <label>Shop / contact address</label>
+      <input class="field" id="fContact" placeholder="e.g. Shop 4, Adeniran Ogunsanya St, Lagos">
+      <label>WhatsApp number (with country code, no + or spaces)</label>
+      <input class="field" id="fWhatsapp" placeholder="e.g. 2348012345678">
+      <button class="btn-primary" id="createBtn">Add to Sello — goes live instantly</button>
+      <div id="formMsg"></div>
+    </div>`);
+    form.querySelector('#createBtn').onclick = async (e)=>{
+      const btn = e.currentTarget;
+      const name = form.querySelector('#fName').value.trim();
+      const niche = form.querySelector('#fNiche').value;
+      const desc = form.querySelector('#fDesc').value.trim();
+      const contact = form.querySelector('#fContact').value.trim();
+      const whatsapp = form.querySelector('#fWhatsapp').value.trim().replace(/[^0-9]/g,'');
+      const msgEl = form.querySelector('#formMsg');
+      if(!name || !desc || !contact || !whatsapp){
+        msgEl.innerHTML = '<div class="err">Fill in every field — including a valid WhatsApp number.</div>';
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Adding…';
+      try{
+        await addDoc(collection(db,'providers'), { name, niche, desc, contact, whatsapp, createdAt: serverTimestamp() });
+        await loadProviders();
+        state.toast = `${name} is live on Sello`;
+        state.adminView = 'list';
+        render();
+      }catch(err){
+        msgEl.innerHTML = '<div class="err">Couldn\'t save that — check your connection and try again.</div>';
+        btn.disabled = false; btn.textContent = 'Add to Sello — goes live instantly';
+      }
+    };
+    content.appendChild(form);
+  }
+  return wrap;
+}
+
+// ---------- init ----------
+onAuthStateChanged(auth, async (user)=>{
+  state.user = user;
+  state.authChecked = true;
+  if(user){
+    try{ await loadProviders(); }catch(e){ console.error(e); }
+  }
+  render();
+});
+render();
+</script>
+</body>
+</html>
