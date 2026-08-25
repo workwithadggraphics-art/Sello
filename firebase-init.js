@@ -14,16 +14,18 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBZZgfuX2ZsyuXHSlvNgVpmI44eGinvIHg",
+  authDomain: "sello-c6671.firebaseapp.com",
+  projectId: "sello-c6671",
+  storageBucket: "sello-c6671.firebasestorage.app",
+  messagingSenderId: "65053299199",
+  appId: "1:65053299199:web:0840d0a1318ad7a17217ca"
 };
 
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
