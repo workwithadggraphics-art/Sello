@@ -3,8 +3,12 @@
   "short_name": "Sello",
   "start_url": "index.html",
   "display": "standalone",
-  "background_color": "#FAF7F1",
-  "theme_color": "#0E7C5B",
+  "background_color": "#F5EFDD",
+  "theme_color": "#0E6E4E",
   "orientation": "portrait",
-  "icons": []
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }
