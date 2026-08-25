@@ -164,7 +164,7 @@ textarea.field{resize:vertical; min-height:70px;}
 .admin-hint{font-family:'Space Mono',monospace; font-size:11px; color:rgba(255,255,255,0.4); margin-top:18px; line-height:1.7;}
 .err{color:#E6A085; font-family:'Space Mono',monospace; font-size:11px; margin-top:8px; font-weight:700;}
 
-.admin-top{display:flex; justify-content:space-between; align-items:center; padding:20px; max-width:480px; margin:0 auto; border-bottom:1px solid rgba(255,255,255,0.12);}
+.admin-top{display:flex; justify-content:space-between; align-items:center; padding:20px; max-width:480px; margin:0 auto; border-bottom:1px solid rgba(255,255,255,0.12); background-color:var(--emerald-deep); background-image:linear-gradient(180deg, rgba(6,34,25,0.55), rgba(6,34,25,0.88)), url('https://iili.io/CD6eob9.png'); background-size:cover; background-position:center;}
 .admin-body{padding:20px; background:var(--paper); color:var(--ink); min-height:calc(100vh - 66px); max-width:480px; margin:0 auto;}
 .logout{font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; color:rgba(255,255,255,0.75); border:1px solid rgba(255,255,255,0.3); padding:6px 12px; border-radius:var(--radius); background:none;}
 .tab-row{display:flex; gap:20px; margin-bottom:18px; border-bottom:1px solid var(--paper-line);}
