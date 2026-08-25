@@ -6,6 +6,7 @@
 <title>Sello Admin</title>
 <meta name="theme-color" content="#062E24">
 <meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,17 +17,20 @@
 
 <script type="module">
 import { db, auth } from "./firebase-init.js";
-import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy, serverTimestamp }
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
 const CATEGORIES = ["Tailoring & Fashion","Hair & Beauty","Photography & Video","Catering & Events","Home & Repairs","Tech & Gadgets","Auto & Mechanic","Health & Wellness","Cleaning Services"];
+const OTHER_VALUE = "__other__";
+const MAX_LOGO_BYTES = 180000; // keeps documents well under Firestore's 1MB limit
 
 let state = {
   user: null,
   authChecked: false,
-  adminView: "list",
+  adminView: "list",   // list | add | edit
+  editingId: null,
   providers: [],
   toast: null,
 };
@@ -37,6 +41,37 @@ function esc(s){ const d=document.createElement('div'); d.textContent=s||''; ret
 async function loadProviders(){
   const snap = await getDocs(query(collection(db,'providers'), orderBy('createdAt','desc')));
   state.providers = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+}
+
+// Resize + compress an uploaded image client-side so it fits safely inside
+// a Firestore document (no Firebase Storage / billing plan required).
+function resizeImageToDataUrl(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const maxDim = 300;
+        let { width, height } = img;
+        if(width > height){ if(width>maxDim){ height*=maxDim/width; width=maxDim; } }
+        else { if(height>maxDim){ width*=maxDim/height; height=maxDim; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        let quality = 0.75;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        while(dataUrl.length * 0.75 > MAX_LOGO_BYTES && quality > 0.3){
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function render(){
@@ -103,8 +138,8 @@ function renderDashboard(){
   </div>`);
 
   wrap.querySelector('#logoutBtn').onclick = async ()=>{ await signOut(auth); };
-  wrap.querySelector('#tabList').onclick = ()=>{ state.adminView='list'; render(); };
-  wrap.querySelector('#tabAdd').onclick = ()=>{ state.adminView='add'; render(); };
+  wrap.querySelector('#tabList').onclick = ()=>{ state.adminView='list'; state.editingId=null; render(); };
+  wrap.querySelector('#tabAdd').onclick = ()=>{ state.adminView='add'; state.editingId=null; render(); };
 
   const content = wrap.querySelector('#adminContent');
   if(state.adminView === 'list'){
@@ -113,10 +148,17 @@ function renderDashboard(){
     } else {
       state.providers.forEach((p,i)=>{
         const row = el(`<div class="provider-row">
-          <div><div class="mono" style="font-size:11px;color:var(--ink-soft);">N°${String(i+1).padStart(3,'0')}</div><div class="p-name">${esc(p.name)}</div><div class="p-niche">${esc(p.niche)}</div></div>
-          <button class="btn-danger">Remove</button>
+          <div class="provider-row-left">
+            ${p.logo ? `<img class="provider-row-logo" src="${p.logo}" alt="">` : ''}
+            <div><div class="mono" style="font-size:11px;color:var(--ink-soft);">N°${String(i+1).padStart(3,'0')}</div><div class="p-name">${esc(p.name)}</div><div class="p-niche">${esc(p.niche)}</div></div>
+          </div>
+          <div class="row-actions">
+            <button class="btn-edit">Edit</button>
+            <button class="btn-danger">Remove</button>
+          </div>
         </div>`);
-        row.querySelector('button').onclick = async ()=>{
+        row.querySelector('.btn-edit').onclick = ()=>{ state.adminView='edit'; state.editingId=p.id; render(); };
+        row.querySelector('.btn-danger').onclick = async ()=>{
           if(!confirm(`Remove ${p.name} from Sello?`)) return;
           await deleteDoc(doc(db,'providers',p.id));
           await loadProviders();
@@ -127,47 +169,104 @@ function renderDashboard(){
       });
     }
   } else {
-    const form = el(`<div>
-      <label>Business / brand name</label>
-      <input class="field" id="fName" placeholder="e.g. Adaeze Threads">
-      <label>Category</label>
-      <select class="field" id="fNiche">${CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
-      <label>What they offer</label>
-      <textarea class="field" id="fDesc" placeholder="A short, honest description of the brand and what customers get"></textarea>
-      <label>Shop / contact address</label>
-      <input class="field" id="fContact" placeholder="e.g. Shop 4, Adeniran Ogunsanya St, Lagos">
-      <label>WhatsApp number (with country code, no + or spaces)</label>
-      <input class="field" id="fWhatsapp" placeholder="e.g. 2348012345678">
-      <button class="btn-primary" id="createBtn">Add to Sello — goes live instantly</button>
-      <div id="formMsg"></div>
-    </div>`);
-    form.querySelector('#createBtn').onclick = async (e)=>{
-      const btn = e.currentTarget;
-      const name = form.querySelector('#fName').value.trim();
-      const niche = form.querySelector('#fNiche').value;
-      const desc = form.querySelector('#fDesc').value.trim();
-      const contact = form.querySelector('#fContact').value.trim();
-      const whatsapp = form.querySelector('#fWhatsapp').value.trim().replace(/[^0-9]/g,'');
-      const msgEl = form.querySelector('#formMsg');
-      if(!name || !desc || !contact || !whatsapp){
-        msgEl.innerHTML = '<div class="err">Fill in every field — including a valid WhatsApp number.</div>';
-        return;
-      }
-      btn.disabled = true; btn.textContent = 'Adding…';
-      try{
-        await addDoc(collection(db,'providers'), { name, niche, desc, contact, whatsapp, createdAt: serverTimestamp() });
-        await loadProviders();
-        state.toast = `${name} is live on Sello`;
-        state.adminView = 'list';
-        render();
-      }catch(err){
-        msgEl.innerHTML = '<div class="err">Couldn\'t save that — check your connection and try again.</div>';
-        btn.disabled = false; btn.textContent = 'Add to Sello — goes live instantly';
-      }
-    };
-    content.appendChild(form);
+    content.appendChild(renderForm(state.adminView === 'edit' ? state.providers.find(p=>p.id===state.editingId) : null));
   }
   return wrap;
+}
+
+function renderForm(existing){
+  const isEdit = !!existing;
+  const knownCategory = existing && CATEGORIES.includes(existing.niche);
+  const startsAsOther = existing && !knownCategory;
+  let logoDataUrl = existing?.logo || null;
+
+  const form = el(`<div>
+    <label>Business / brand name</label>
+    <input class="field" id="fName" placeholder="e.g. Adaeze Threads" value="${esc(existing?.name||'')}">
+
+    <label>Category</label>
+    <select class="field" id="fNiche">
+      ${CATEGORIES.map(c=>`<option ${existing && c===existing.niche?'selected':''}>${esc(c)}</option>`).join('')}
+      <option value="${OTHER_VALUE}" ${startsAsOther?'selected':''}>Other — type your own</option>
+    </select>
+    <input class="field" id="fNicheOther" placeholder="Type the category" style="display:${startsAsOther?'block':'none'};" value="${startsAsOther?esc(existing.niche):''}">
+
+    <label>What they offer</label>
+    <textarea class="field" id="fDesc" placeholder="A short, honest description of the brand and what customers get">${esc(existing?.desc||'')}</textarea>
+
+    <label>Shop / contact address</label>
+    <input class="field" id="fContact" placeholder="e.g. Shop 4, Adeniran Ogunsanya St, Lagos" value="${esc(existing?.contact||'')}">
+
+    <label>WhatsApp number (with country code, no + or spaces)</label>
+    <input class="field" id="fWhatsapp" placeholder="e.g. 2348012345678" value="${esc(existing?.whatsapp||'')}">
+
+    <label>Brand logo (optional)</label>
+    <div class="logo-upload">
+      <img class="logo-preview" id="logoPreview" src="${logoDataUrl||''}" style="display:${logoDataUrl?'block':'none'};">
+      <div class="logo-preview empty" id="logoEmpty" style="display:${logoDataUrl?'none':'flex'};">No logo</div>
+      <label class="file-btn">Choose image<input type="file" accept="image/*" id="fLogo"></label>
+    </div>
+
+    <button class="btn-primary" id="saveBtn">${isEdit ? 'Save changes' : 'Add to Sello — goes live instantly'}</button>
+    ${isEdit ? `<button class="btn-secondary" id="cancelBtn" style="margin-top:8px;">Cancel</button>` : ''}
+    <div id="formMsg"></div>
+  </div>`);
+
+  const nicheSelect = form.querySelector('#fNiche');
+  const nicheOther = form.querySelector('#fNicheOther');
+  nicheSelect.onchange = ()=>{ nicheOther.style.display = nicheSelect.value===OTHER_VALUE ? 'block' : 'none'; };
+
+  form.querySelector('#fLogo').onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const msgEl = form.querySelector('#formMsg');
+    try{
+      logoDataUrl = await resizeImageToDataUrl(file);
+      form.querySelector('#logoPreview').src = logoDataUrl;
+      form.querySelector('#logoPreview').style.display = 'block';
+      form.querySelector('#logoEmpty').style.display = 'none';
+    }catch(err){
+      msgEl.innerHTML = '<div class="err">Couldn\'t read that image — try a different file.</div>';
+    }
+  };
+
+  form.querySelector('#saveBtn').onclick = async (e)=>{
+    const btn = e.currentTarget;
+    const name = form.querySelector('#fName').value.trim();
+    const niche = nicheSelect.value===OTHER_VALUE ? nicheOther.value.trim() : nicheSelect.value;
+    const desc = form.querySelector('#fDesc').value.trim();
+    const contact = form.querySelector('#fContact').value.trim();
+    const whatsapp = form.querySelector('#fWhatsapp').value.trim().replace(/[^0-9]/g,'');
+    const msgEl = form.querySelector('#formMsg');
+    if(!name || !niche || !desc || !contact || !whatsapp){
+      msgEl.innerHTML = '<div class="err">Fill in every field — including a valid WhatsApp number.</div>';
+      return;
+    }
+    btn.disabled = true; btn.textContent = isEdit ? 'Saving…' : 'Adding…';
+    const payload = { name, niche, desc, contact, whatsapp, logo: logoDataUrl || null };
+    try{
+      if(isEdit){
+        await updateDoc(doc(db,'providers',existing.id), payload);
+        state.toast = `${name} updated`;
+      } else {
+        await addDoc(collection(db,'providers'), { ...payload, createdAt: serverTimestamp() });
+        state.toast = `${name} is live on Sello`;
+      }
+      await loadProviders();
+      state.adminView = 'list';
+      state.editingId = null;
+      render();
+    }catch(err){
+      msgEl.innerHTML = '<div class="err">Couldn\'t save that — check your connection and try again.</div>';
+      btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Add to Sello — goes live instantly';
+    }
+  };
+
+  if(isEdit){
+    form.querySelector('#cancelBtn').onclick = ()=>{ state.adminView='list'; state.editingId=null; render(); };
+  }
+
+  return form;
 }
 
 // ---------- init ----------
