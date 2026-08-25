@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -21,7 +23,10 @@ import { db } from "./firebase-init.js";
 import { collection, getDocs, addDoc, query, where, orderBy, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-const CATEGORIES = ["All","Tailoring & Fashion","Hair & Beauty","Photography & Video","Catering & Events","Home & Repairs","Tech & Gadgets","Auto & Mechanic","Health & Wellness","Cleaning Services"];
+function getCategories(){
+  const set = new Set(state.providers.map(p=>p.niche).filter(Boolean));
+  return ["All", ...Array.from(set).sort()];
+}
 
 let state = {
   view: "home",
@@ -82,10 +87,16 @@ function filteredProviders(){
 
 function renderHome(){
   const wrap = el(`<div style="display:flex;flex-direction:column;min-height:100vh;">
-    <div class="topbar">
-      <div class="brandrow">
-        <div class="brand"><div class="stamp">S</div><h1>Sello</h1></div>
+    <div class="site-hero">
+      <div class="site-hero-inner">
+        <div class="brandrow">
+          <div class="brand"><div class="stamp">S</div><h1>Sello</h1></div>
+          <a href="admin.html" class="admin-link">Admin</a>
+        </div>
+        <div class="hero-tagline">A directory of trusted hands, near you</div>
       </div>
+    </div>
+    <div class="sticky-controls">
       <div class="search-wrap">
         <input class="search-input" id="searchInput" placeholder="Search a service — tailor, photographer, caterer…" value="${esc(state.search)}">
       </div>
@@ -98,7 +109,7 @@ function renderHome(){
   </div>`);
 
   const chipRow = wrap.querySelector('#chipRow');
-  CATEGORIES.forEach(c=>{
+  getCategories().forEach(c=>{
     const chip = el(`<button class="chip ${c===state.category?'active':''}">${esc(c)}</button>`);
     chip.onclick = ()=>{ state.category = c; render(); };
     chipRow.appendChild(chip);
@@ -123,7 +134,10 @@ function renderList(wrap){
     const card = el(`<div class="ledger-row">
       <div class="entry-no">N°${entryNo}</div>
       <div class="entry-body">
-        <div class="entry-top"><div class="entry-name">${esc(p.name)}</div><div class="entry-stamp">✓</div></div>
+        <div class="entry-top">
+          <div class="entry-name-row">${p.logo ? `<img class="entry-photo" src="${p.logo}" alt="">` : ''}<div class="entry-name">${esc(p.name)}</div></div>
+          <div class="entry-stamp">✓</div>
+        </div>
         <div class="entry-niche">${esc(p.niche)}</div>
         <div class="entry-desc">${esc(p.desc)}</div>
         <div class="entry-meta">
@@ -154,6 +168,7 @@ function renderDetail(){
       <a href="#" id="backBtn" class="back-btn">‹ Back to Sello</a>
       <div class="stamp-corner">SELLO<br>VERIFIED</div>
       <div class="entry-no-big">FILE N°${String(state.providers.findIndex(x=>x.id===p.id)+1).padStart(3,'0')}</div>
+      ${p.logo ? `<img class="detail-logo" src="${p.logo}" alt="">` : ''}
       <h2>${esc(p.name)}</h2>
       <div class="niche">${esc(p.niche)}</div>
     </div>
@@ -242,6 +257,9 @@ function renderDetail(){
 }
 
 // ---------- init ----------
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
+}
 (async function init(){
   render();
   try{
