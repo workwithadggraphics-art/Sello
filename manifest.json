@@ -1,0 +1,10 @@
+{
+  "name": "Sello — Find trusted hands nearby",
+  "short_name": "Sello",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#FAF7F1",
+  "theme_color": "#0E7C5B",
+  "orientation": "portrait",
+  "icons": []
+}
