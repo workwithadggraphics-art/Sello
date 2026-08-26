@@ -62,7 +62,7 @@ button{font-family:inherit; cursor:pointer;}
 .content-photo{
   background-color:var(--paper);
   background-image:
-    linear-gradient(180deg, rgba(245,239,221,0.88), rgba(245,239,221,0.94)),
+    linear-gradient(180deg, rgba(245,239,221,0.55), rgba(245,239,221,0.65)),
     url('https://iili.io/CD6icoQ.png');
   background-size:cover; background-position:center top; background-attachment:fixed;
 }
