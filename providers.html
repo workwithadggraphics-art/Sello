@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>List your business on Sello</title>
+<meta name="theme-color" content="#062E24">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="https://iili.io/CD6eob9.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="sello-styles.css">
+</head>
+<body>
+<div id="app"><div class="loading">Opening Sello…</div></div>
+
+<script type="module">
+import { db, auth } from "./firebase-init.js";
+import { collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+const CATEGORIES = ["Tailoring & Fashion","Hair & Beauty","Photography & Video","Catering & Events","Home & Repairs","Tech & Gadgets","Auto & Mechanic","Health & Wellness","Cleaning Services"];
+const OTHER_VALUE = "__other__";
+const MAX_LOGO_BYTES = 180000;
+
+let state = { authChecked:false, user:null, myListing:null, loadingListing:false, toast:null };
+
+function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+function resizeImageToDataUrl(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const maxDim = 300;
+        let { width, height } = img;
+        if(width > height){ if(width>maxDim){ height*=maxDim/width; width=maxDim; } }
+        else { if(height>maxDim){ width*=maxDim/height; height=maxDim; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        let quality = 0.75;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        while(dataUrl.length * 0.75 > MAX_LOGO_BYTES && quality > 0.3){
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadMyListing(uid){
+  const snap = await getDocs(query(collection(db,'providers'), where('ownerUid','==',uid)));
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  if(!state.authChecked || state.loadingListing){ app.appendChild(el(`<div class="loading">Opening Sello…</div>`)); return; }
+  app.appendChild(!state.user ? renderSignIn() : renderDashboard());
+  if(state.toast){
+    const t = el(`<div class="toast">${esc(state.toast)}</div>`);
+    app.appendChild(t);
+    setTimeout(()=>{ state.toast=null; t.remove(); }, 2200);
+  }
+}
+
+function renderSignIn(){
+  const wrap = el(`<div class="admin-shell">
+    <div class="admin-login">
+      <div class="stamp">S</div>
+      <h2>List your business</h2>
+      <p class="sub">Sign in with Google to create or manage your Sello listing.</p>
+      <button class="btn-primary" id="googleBtn" style="margin-top:20px;">Continue with Google</button>
+      <div id="signInErr"></div>
+      <div class="admin-hint">New listings go into a short review queue before they appear on the main site.<br><br>
+      <a href="index.html" style="color:rgba(255,255,255,0.7);text-decoration:underline;">← Back to the main site</a></div>
+    </div>
+  </div>`);
+  wrap.querySelector('#googleBtn').onclick = async (e)=>{
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Opening Google…';
+    try{
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    }catch(err){
+      wrap.querySelector('#signInErr').innerHTML = '<div class="err">Sign-in didn\'t go through — try again.</div>';
+      btn.disabled = false; btn.textContent = 'Continue with Google';
+    }
+  };
+  return wrap;
+}
+
+function statusBadge(status){
+  if(status === 'approved') return `<span style="color:var(--emerald-dark);font-weight:700;">● LIVE on Sello</span>`;
+  if(status === 'rejected') return `<span style="color:var(--danger);font-weight:700;">● Not approved</span>`;
+  return `<span style="color:var(--gold);font-weight:700;">● Pending review</span>`;
+}
+
+function renderDashboard(){
+  const listing = state.myListing;
+  const wrap = el(`<div class="admin-shell">
+    <div class="admin-top">
+      <div class="brand"><div class="stamp" style="border-color:var(--emerald-tint);color:var(--emerald-tint);">S</div><h1 style="color:#fff;font-size:18px;">My Sello Listing</h1></div>
+      <button class="logout" id="logoutBtn">Log out</button>
+    </div>
+    <div class="admin-body">
+      ${listing ? `<div class="mono" style="font-size:11px;margin-bottom:14px;">${statusBadge(listing.status)}</div>` : `<p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;">Signed in as ${esc(state.user.email)}. Fill this in to list your business on Sello.</p>`}
+      <div id="formHolder"></div>
+      <div style="margin-top:24px;"><a href="index.html" style="font-size:12px;color:var(--ink-soft);text-decoration:underline;">View the main site →</a></div>
+    </div>
+  </div>`);
+
+  wrap.querySelector('#logoutBtn').onclick = async ()=>{ await signOut(auth); };
+  wrap.querySelector('#formHolder').appendChild(renderForm(listing));
+  return wrap;
+}
+
+function renderForm(existing){
+  const knownCategory = existing && CATEGORIES.includes(existing.niche);
+  const startsAsOther = existing && !knownCategory;
+  let logoDataUrl = existing?.logo || null;
+
+  const form = el(`<div>
+    <label>Business / brand name</label>
+    <input class="field" id="fName" placeholder="e.g. Adaeze Threads" value="${esc(existing?.name||'')}">
+
+    <label>Category</label>
+    <select class="field" id="fNiche">
+      ${CATEGORIES.map(c=>`<option ${existing && c===existing.niche?'selected':''}>${esc(c)}</option>`).join('')}
+      <option value="${OTHER_VALUE}" ${startsAsOther?'selected':''}>Other — type your own</option>
+    </select>
+    <input class="field" id="fNicheOther" placeholder="Type the category" style="display:${startsAsOther?'block':'none'};" value="${startsAsOther?esc(existing.niche):''}">
+
+    <label>What they offer</label>
+    <textarea class="field" id="fDesc" placeholder="A short, honest description of the brand and what customers get">${esc(existing?.desc||'')}</textarea>
+
+    <label>Shop / contact address</label>
+    <input class="field" id="fContact" placeholder="e.g. Shop 4, Adeniran Ogunsanya St, Lagos" value="${esc(existing?.contact||'')}">
+
+    <label>WhatsApp number (with country code, no + or spaces)</label>
+    <input class="field" id="fWhatsapp" placeholder="e.g. 2348012345678" value="${esc(existing?.whatsapp||'')}">
+
+    <label>Brand logo (optional)</label>
+    <div class="logo-upload">
+      <img class="logo-preview" id="logoPreview" src="${logoDataUrl||''}" style="display:${logoDataUrl?'block':'none'};">
+      <div class="logo-preview empty" id="logoEmpty" style="display:${logoDataUrl?'none':'flex'};">No logo</div>
+      <label class="file-btn">Choose image<input type="file" accept="image/*" id="fLogo"></label>
+    </div>
+
+    <button class="btn-primary" id="saveBtn">${existing ? 'Save changes' : 'Submit for review'}</button>
+    <div id="formMsg"></div>
+  </div>`);
+
+  const nicheSelect = form.querySelector('#fNiche');
+  const nicheOther = form.querySelector('#fNicheOther');
+  nicheSelect.onchange = ()=>{ nicheOther.style.display = nicheSelect.value===OTHER_VALUE ? 'block' : 'none'; };
+
+  form.querySelector('#fLogo').onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      logoDataUrl = await resizeImageToDataUrl(file);
+      form.querySelector('#logoPreview').src = logoDataUrl;
+      form.querySelector('#logoPreview').style.display = 'block';
+      form.querySelector('#logoEmpty').style.display = 'none';
+    }catch(err){
+      form.querySelector('#formMsg').innerHTML = '<div class="err">Couldn\'t read that image — try a different file.</div>';
+    }
+  };
+
+  form.querySelector('#saveBtn').onclick = async (e)=>{
+    const btn = e.currentTarget;
+    const name = form.querySelector('#fName').value.trim();
+    const niche = nicheSelect.value===OTHER_VALUE ? nicheOther.value.trim() : nicheSelect.value;
+    const desc = form.querySelector('#fDesc').value.trim();
+    const contact = form.querySelector('#fContact').value.trim();
+    const whatsapp = form.querySelector('#fWhatsapp').value.trim().replace(/[^0-9]/g,'');
+    const msgEl = form.querySelector('#formMsg');
+    if(!name || !niche || !desc || !contact || !whatsapp){
+      msgEl.innerHTML = '<div class="err">Fill in every field — including a valid WhatsApp number.</div>';
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try{
+      if(existing){
+        await updateDoc(doc(db,'providers',existing.id), { name, niche, desc, contact, whatsapp, logo: logoDataUrl || null });
+        state.myListing = { ...existing, name, niche, desc, contact, whatsapp, logo: logoDataUrl || null };
+        state.toast = "Listing updated";
+      } else {
+        const ref = await addDoc(collection(db,'providers'), {
+          name, niche, desc, contact, whatsapp, logo: logoDataUrl || null,
+          status: 'pending', ownerUid: state.user.uid, ownerEmail: state.user.email,
+          createdAt: serverTimestamp(),
+        });
+        state.myListing = { id: ref.id, name, niche, desc, contact, whatsapp, logo: logoDataUrl || null, status: 'pending', ownerUid: state.user.uid };
+        state.toast = "Submitted — pending admin review";
+      }
+      render();
+    }catch(err){
+      msgEl.innerHTML = '<div class="err">Couldn\'t save that — check your connection and try again.</div>';
+      btn.disabled = false; btn.textContent = existing ? 'Save changes' : 'Submit for review';
+    }
+  };
+
+  return form;
+}
+
+// ---------- init ----------
+onAuthStateChanged(auth, async (user)=>{
+  state.user = user;
+  state.authChecked = true;
+  state.myListing = null;
+  if(user){
+    state.loadingListing = true;
+    render();
+    try{ state.myListing = await loadMyListing(user.uid); }catch(e){ console.error(e); }
+    state.loadingListing = false;
+  }
+  render();
+});
+render();
+</script>
+</body>
+</html>
