@@ -4,7 +4,6 @@
 const CACHE_NAME = 'sello-shell-v1';
 const SHELL_FILES = [
   './index.html',
-  './landing.html',
   './sello-styles.css',
   './manifest.json',
 ];
