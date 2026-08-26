@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sello Admin</title>
 <meta name="theme-color" content="#062E24">
+<meta name="color-scheme" content="light">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="https://iili.io/CD6eob9.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,7 +30,7 @@ const MAX_LOGO_BYTES = 180000; // keeps documents well under Firestore's 1MB lim
 let state = {
   user: null,
   authChecked: false,
-  adminView: "list",   // list | add | edit
+  adminView: "pending",   // pending | list | add | edit
   editingId: null,
   providers: [],
   toast: null,
@@ -129,7 +130,8 @@ function renderDashboard(){
     </div>
     <div class="admin-body">
       <div class="tab-row">
-        <button class="tab ${state.adminView==='list'?'active':''}" id="tabList">Providers (${state.providers.length})</button>
+        <button class="tab ${state.adminView==='pending'?'active':''}" id="tabPending">Pending (${state.providers.filter(p=>p.status==='pending').length})</button>
+        <button class="tab ${state.adminView==='list'?'active':''}" id="tabList">Live (${state.providers.filter(p=>p.status!=='pending'&&p.status!=='rejected').length})</button>
         <button class="tab ${state.adminView==='add'?'active':''}" id="tabAdd">+ Add new</button>
       </div>
       <div id="adminContent"></div>
@@ -138,15 +140,54 @@ function renderDashboard(){
   </div>`);
 
   wrap.querySelector('#logoutBtn').onclick = async ()=>{ await signOut(auth); };
+  wrap.querySelector('#tabPending').onclick = ()=>{ state.adminView='pending'; state.editingId=null; render(); };
   wrap.querySelector('#tabList').onclick = ()=>{ state.adminView='list'; state.editingId=null; render(); };
   wrap.querySelector('#tabAdd').onclick = ()=>{ state.adminView='add'; state.editingId=null; render(); };
 
   const content = wrap.querySelector('#adminContent');
-  if(state.adminView === 'list'){
-    if(!state.providers.length){
+  if(state.adminView === 'pending'){
+    const pending = state.providers.filter(p=>p.status==='pending');
+    if(!pending.length){
+      content.appendChild(el(`<div class="empty"><div class="stamp">✓</div><p>Nothing waiting on you.<br>New provider sign-ups will show up here.</p></div>`));
+    } else {
+      pending.forEach(p=>{
+        const row = el(`<div class="provider-row" style="flex-direction:column;align-items:stretch;">
+          <div class="provider-row-left" style="margin-bottom:10px;">
+            ${p.logo ? `<img class="provider-row-logo" src="${p.logo}" alt="">` : ''}
+            <div>
+              <div class="p-name">${esc(p.name)}</div>
+              <div class="p-niche">${esc(p.niche)}</div>
+              <div class="mono" style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${esc(p.ownerEmail||'')}</div>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--ink-soft);margin-bottom:10px;">${esc(p.desc)}<br><span class="mono" style="font-size:11px;">${esc(p.contact)} · ${esc(p.whatsapp)}</span></div>
+          <div class="row-actions">
+            <button class="btn-primary" style="width:auto;flex:1;margin-top:0;">Approve</button>
+            <button class="btn-danger" style="flex:1;">Reject</button>
+          </div>
+        </div>`);
+        row.querySelector('.btn-primary').onclick = async ()=>{
+          await updateDoc(doc(db,'providers',p.id), { status:'approved' });
+          await loadProviders();
+          state.toast = `${p.name} approved — now live`;
+          render();
+        };
+        row.querySelector('.btn-danger').onclick = async ()=>{
+          if(!confirm(`Reject ${p.name}'s listing?`)) return;
+          await updateDoc(doc(db,'providers',p.id), { status:'rejected' });
+          await loadProviders();
+          state.toast = "Listing rejected";
+          render();
+        };
+        content.appendChild(row);
+      });
+    }
+  } else if(state.adminView === 'list'){
+    const live = state.providers.filter(p=>p.status!=='pending'&&p.status!=='rejected');
+    if(!live.length){
       content.appendChild(el(`<div class="empty"><div class="stamp">?</div><p>No providers yet.<br>Add your first one.</p></div>`));
     } else {
-      state.providers.forEach((p,i)=>{
+      live.forEach((p,i)=>{
         const row = el(`<div class="provider-row">
           <div class="provider-row-left">
             ${p.logo ? `<img class="provider-row-logo" src="${p.logo}" alt="">` : ''}
@@ -249,7 +290,7 @@ function renderForm(existing){
         await updateDoc(doc(db,'providers',existing.id), payload);
         state.toast = `${name} updated`;
       } else {
-        await addDoc(collection(db,'providers'), { ...payload, createdAt: serverTimestamp() });
+        await addDoc(collection(db,'providers'), { ...payload, status:'approved', createdAt: serverTimestamp() });
         state.toast = `${name} is live on Sello`;
       }
       await loadProviders();
