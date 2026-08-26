@@ -48,7 +48,9 @@ function starString(n){ const full=Math.round(n); return "★".repeat(full)+"☆
 // ---------- data ----------
 async function loadProviders(){
   const snap = await getDocs(query(collection(db,'providers'), orderBy('createdAt','desc')));
-  state.providers = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+  state.providers = snap.docs
+    .map(d=>({ id:d.id, ...d.data() }))
+    .filter(p => p.status !== 'pending' && p.status !== 'rejected'); // only show admin-approved listings
 }
 async function loadReviewsFor(providerId){
   if(state.reviews[providerId]) return state.reviews[providerId];
@@ -95,7 +97,7 @@ function renderLanding(){
       <div class="landing-tagline">A directory of trusted hands, near you</div>
       <div class="landing-sub">Tailors. Photographers. Caterers. Repairs.<br>Real people, verified on Sello, one WhatsApp message away.</div>
       <button class="btn-primary landing-cta" id="enterBtn">Enter Sello</button>
-      <a href="admin.html" class="landing-admin">List your business →</a>
+      <a href="providers.html" class="landing-admin">List your business →</a>
     </div>
   </div>`);
   wrap.querySelector('#enterBtn').onclick = ()=>{ state.view = 'home'; render(); };
