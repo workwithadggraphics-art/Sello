@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sello — Find trusted hands nearby</title>
 <meta name="theme-color" content="#0E7C5B">
+<meta name="color-scheme" content="light">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.json">
@@ -29,7 +30,7 @@ function getCategories(){
 }
 
 let state = {
-  view: "home",
+  view: "landing",
   providerId: null,
   search: "",
   category: "All",
@@ -66,6 +67,7 @@ function avgRating(pid){
 function render(){
   const app = document.getElementById('app');
   app.innerHTML = '';
+  if(state.view === 'landing'){ app.appendChild(renderLanding()); return; }
   if(state.loading){ app.appendChild(el(`<div class="loading">Opening Sello…</div>`)); return; }
   if(state.view === 'home') app.appendChild(renderHome());
   else if(state.view === 'detail') app.appendChild(renderDetail());
@@ -85,13 +87,27 @@ function filteredProviders(){
   });
 }
 
+function renderLanding(){
+  const wrap = el(`<div class="landing">
+    <div class="landing-content">
+      <div class="stamp landing-stamp">S</div>
+      <h1 class="landing-title">Sello</h1>
+      <div class="landing-tagline">A directory of trusted hands, near you</div>
+      <div class="landing-sub">Tailors. Photographers. Caterers. Repairs.<br>Real people, verified on Sello, one WhatsApp message away.</div>
+      <button class="btn-primary landing-cta" id="enterBtn">Enter Sello</button>
+      <a href="admin.html" class="landing-admin">List your business →</a>
+    </div>
+  </div>`);
+  wrap.querySelector('#enterBtn').onclick = ()=>{ state.view = 'home'; render(); };
+  return wrap;
+}
+
 function renderHome(){
   const wrap = el(`<div style="display:flex;flex-direction:column;min-height:100vh;">
     <div class="site-hero">
       <div class="site-hero-inner">
         <div class="brandrow">
           <div class="brand"><div class="stamp">S</div><h1>Sello</h1></div>
-          <a href="admin.html" class="admin-link">Admin</a>
         </div>
         <div class="hero-tagline">A directory of trusted hands, near you</div>
       </div>
